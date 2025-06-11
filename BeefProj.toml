@@ -1,0 +1,15 @@
+FileVersion = 1
+Dependencies = {corlib = "*", BeefParser = "*"}
+
+[Project]
+Name = "BeefYield"
+TargetType = "BeefLib"
+StartupObject = "BeefYield.Program"
+
+[[ProjectFolder.Items]]
+Type = "AutoFolder"
+Name = "Visitors"
+
+[[ProjectFolder.Items.Items]]
+Type = "IgnoreSource"
+Name = "FrameGenVisitor - Copia.bf"

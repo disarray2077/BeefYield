@@ -1,0 +1,8 @@
+FileVersion = 1
+Projects = {BeefYield = {Path = "."}, BeefParser = {Path = "../BeefParser"}, "BeefYield.Tests" = {Path = "Tests"}}
+
+[Workspace]
+StartupProject = "BeefYield"
+
+[Configs.Test.Win64]
+AllocStackTraceDepth = 10
