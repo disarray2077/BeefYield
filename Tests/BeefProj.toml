@@ -5,7 +5,3 @@ Dependencies = {corlib = "*", BeefYield = "*"}
 Name = "BeefYield.Tests"
 TargetType = "BeefTest"
 StartupObject = "BeefYield.Tests.Program"
-
-[[ProjectFolder.Items]]
-Type = "IgnoreSource"
-Name = "Test4.bf"

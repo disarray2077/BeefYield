@@ -49,7 +49,9 @@ struct MakeYieldableAttribute : Attribute, IOnMethodInit
 		let finalCode = scope String();
 		finalCode.AppendF(
 			$$"""
-			return YieldEnumerator<comptype({{yieldType.GetTypeId()}})>()..Set((state, context) => {
+			{
+			{{generateContextTuple(frameGen, .. scope .())}}
+			return YieldEnumerator<comptype({{yieldType.GetTypeId()}})>()..Set(TContext, (state, context) => {
 				static mixin CheckTypeNoWarn<T>(var obj) => obj is T;
 			{{generateVarsAssign(frameGen, .. scope .())}}
 				while(true)
@@ -62,6 +64,7 @@ struct MakeYieldableAttribute : Attribute, IOnMethodInit
 					}
 				}
 			});
+			}
 			""");
 
 		Compiler.EmitMethodEntry(methodInfo, finalCode);
@@ -76,29 +79,34 @@ struct MakeYieldableAttribute : Attribute, IOnMethodInit
 		return visitor.FoundMethod;
 	}
 
-	private void generateVarsAssign(FrameGenVisitor frameGen, String output)
+	private void generateContextTuple(FrameGenVisitor frameGen, String output)
 	{
-		CodeGenVisitor codeGen = scope .(null);
-
 		for (let variable in frameGen.Variables)
 		{
-			let valueStr = variable.value.ToString(.. scope .());
-			if (valueStr == "var" || valueStr == "let")
+			output.AppendF($"{variable.value} {variable.key} = ?;\n");
+		}
+
+		output.Append("(");
+		bool first = true;
+		for (let variable in frameGen.Variables)
+		{
+			if (!first)
+				output.Append(", ");
+			output.AppendF($"decltype({variable.key}) m_{variable.key}");
+			first = false;
+		}
+		output.Append(") TContext = ?;");
+	}
+
+	private void generateVarsAssign(FrameGenVisitor frameGen, String output)
+	{
+		for (let variable in frameGen.Variables)
+		{
+			if (variable.value is VarTypeSpec || variable.value is LetTypeSpec)
 			{
-				// We don't know what this is.
-				Runtime.FatalError("Implicit variable type not supported.");
+				Runtime.FatalError("Implicit variable type 'var'/'let' not supported for yieldable locals.");
 			}
-			else if (var exprModType = variable.value as ExprModTypeSpec)
-			{
-				let exprOutput = codeGen.Output = scope String();
-				codeGen.Visit(exprModType.Expr);
-				
-				output.AppendF($"\tvar {variable.key} = ref context.GetRef<decltype({exprOutput})>(\"{variable.key}\");\n");
-			}
-			else
-			{
-				output.AppendF($"\tvar {variable.key} = ref context.GetRef<{valueStr}>(\"{variable.key}\");\n");
-			}
+			output.AppendF($"\tvar {variable.key} = ref context.m_{variable.key};\n");
 		}
 	}
 

@@ -5,34 +5,19 @@ namespace BeefYield;
 
 struct YieldEnumerator<T> : IEnumerator<T>, IDisposable
 {
-	public Dictionary<StringView, uint8*> mContext = new .();
-	public delegate Result<T>(ref int, ref YieldEnumerator<T>) mGetNext = null;
+	public uint8[] mContext = null;
+	public delegate Result<T>(ref int, uint8*) mGetNext = null;
 	public int mState = 0;
 
-	public void Set<TFunc>(TFunc f) mut
-		where TFunc : delegate Result<T>(ref int, ref YieldEnumerator<T>) 
+	public void Set<TContext, TFunc>(TContext, TFunc f) mut
+		where TFunc : delegate Result<T>(ref int, ref TContext context) 
 	{
-		mGetNext = new (state, context) => [Inline]f(ref state, ref context);
-	}
-
-	public ref TVar GetRef<TVar>(StringView key) mut
-		where TVar : var
-	{
-		if (mContext.TryAdd(key, let keyPtr, let valuePtr))
-		{
-			*valuePtr = new uint8[sizeof(TVar)]* ();
-			return ref *(TVar*)(*valuePtr);
-		}
-		else
-		{
-			return ref *(TVar*)(*valuePtr);
-		}
+		mContext = new uint8[sizeof(TContext)];
+		mGetNext = new (state, context) => [Inline]f(ref state, ref *(TContext*)mContext.Ptr);
 	}
 
 	public void Dispose()
 	{
-		for (let ptr in mContext.Values)
-			delete ptr;
 		delete mContext;
 		delete mGetNext;
 	}
@@ -41,6 +26,6 @@ struct YieldEnumerator<T> : IEnumerator<T>, IDisposable
 	{
 		if (mState == -1)
 			Runtime.FatalError("Enumerator re-entry not supported.");
-		return mGetNext(ref mState, ref this);
+		return mGetNext(ref mState, mContext.Ptr);
 	}
 }
