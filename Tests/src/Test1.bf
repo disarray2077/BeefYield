@@ -7,7 +7,7 @@ using System.Diagnostics;
 
 namespace BeefYield.Tests
 {
-	class Test4
+	class Test1
 	{
 		// TODO: Use something like Compiler.CalledFilePath instead.
 		const String FilePath = @"d:\BeefLang\Repository\BeefYield\Tests\src\Test1.bf";
@@ -30,7 +30,7 @@ namespace BeefYield.Tests
 		}
 	
 		[Test]
-		public static void Test2()
+		public static void Test1()
 		{
 			int final = 0;
 			for (let i in Yieldable(100))
