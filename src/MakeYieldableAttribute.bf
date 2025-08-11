@@ -108,7 +108,7 @@ struct MakeYieldableAttribute : Attribute, IOnMethodInit
 
 		for (let (id, frame) in frameGen.Frames)
 		{
-			output.AppendF($"case {id}: // {frame.Description ?? frame.Name}\n");
+			output.AppendF($"case {id}: // {frame.Description ?? frame.Kind.ToString(.. scope .())}\n");
 
 			String caseOutput = codeGen.Output = scope String();
 

@@ -4,6 +4,14 @@ using BeefParser.AST;
 
 namespace BeefYield
 {
+	enum FrameKind
+	{
+		Start,
+		Block,
+		ExitBlock,
+		LoopIncrement,
+	}
+
 	enum FrameExit
 	{
 		Continue,
@@ -14,11 +22,10 @@ namespace BeefYield
 
 	class Frame
 	{
-		public String Name { get; private set; }
+		public FrameKind Kind { get; private set; }
 		public String Description { get; private set; } ~ delete _;
 		public int Id { get; private set; }
 		public readonly List<Statement> Statements = new .() ~ delete _;
-		public readonly List<Statement> Finalizers = new .() ~ delete _;
 		public FrameExit Exit = .Continue;
 		public Expression ExitExpr;
 		public Expression ResultExpr;
@@ -29,16 +36,16 @@ namespace BeefYield
 			get => mNext;
 			set
 			{
-				Runtime.Assert(mNext == null);
+				Runtime.Assert(mNext == null, "Attempt to overwrite an existing frame transition!");
 				if (value.Id == -1)
 					System.Diagnostics.Debug.Break();
 				mNext = value;
 			}
 		}
 
-		public this(String name, String description, int id)
+		public this(FrameKind kind, String description, int id)
 		{
-			Name = name;
+			Kind = kind;
 			Description = description;
 			Id = id;
 		}
