@@ -85,7 +85,14 @@ struct MakeYieldableAttribute : Attribute, IOnMethodInit
 			output.AppendF($"{variable.value} {variable.key} = ?;\n");
 		}
 
+		if (frameGen.Variables.IsEmpty)
+		{
+			output.Append("#unwarn\nvoid TContext = ?;");
+			return;
+		}
+
 		output.Append("(");
+
 		bool first = true;
 		for (let variable in frameGen.Variables)
 		{
@@ -94,6 +101,12 @@ struct MakeYieldableAttribute : Attribute, IOnMethodInit
 			output.AppendF($"decltype({variable.key}) m_{variable.key}");
 			first = false;
 		}
+
+		if (frameGen.Variables.Count == 1)
+		{
+			output.Append(", void _");
+		}
+
 		output.Append(") TContext = ?;");
 	}
 
