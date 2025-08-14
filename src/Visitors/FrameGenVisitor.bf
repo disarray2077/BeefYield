@@ -10,13 +10,13 @@ namespace BeefYield
 {
 	public class FrameGenVisitor : ASTVisitor
 	{
-		private enum ScopeKind
+		protected enum ScopeKind
 		{
 			Block,
 			Loop
 		}
 
-		private class Scope
+		protected class Scope
 		{
 			public ScopeKind Kind;
 			public List<Statement> Finalizers = new .() ~ Release!(_);
@@ -27,17 +27,17 @@ namespace BeefYield
 			}
 		}
 
-		private Dictionary<StringView, TypeSpec> mVariables = new .() ~ Release!(_);
-		private Dictionary<int, Frame> mFrames = new .() ~ Release!(_);
-		private int mGroupCounter;
-		private int mFrameCounter;
+		protected Dictionary<StringView, TypeSpec> mVariables = new .() ~ Release!(_);
+		protected Dictionary<int, Frame> mFrames = new .() ~ Release!(_);
+		protected int mGroupCounter;
+		protected int mFrameCounter;
 		private int mReservedFrameCounter;
-		private List<Frame> mFrameStack = new .() ~ Release!(_);
-		private List<Scope> mScopeStack = new .() ~ Release!(_);
+		protected List<Frame> mFrameStack = new .() ~ Release!(_);
+		protected List<Scope> mScopeStack = new .() ~ Release!(_);
 		private List<String> mOwnedNames = new .() ~ Release!(_);
 
-		private Frame CurrentFrame => !mFrameStack.IsEmpty ? mFrameStack.Back : null;
-		private Scope CurrentScope => !mScopeStack.IsEmpty ? mScopeStack.Back : null;
+		protected Frame CurrentFrame => !mFrameStack.IsEmpty ? mFrameStack.Back : null;
+		protected Scope CurrentScope => !mScopeStack.IsEmpty ? mScopeStack.Back : null;
 		
 		public Dictionary<StringView, TypeSpec> Variables => mVariables;
 		public Dictionary<int, Frame> Frames => mFrames;
@@ -66,7 +66,7 @@ namespace BeefYield
 			pushNewScope(.Block);
 		}
 
-		private String newOwnedName(String prefix, int gid)
+		protected String newOwnedName(String prefix, int gid)
 		{
 			String name = new .();
 			name.AppendF("{0}{1}", prefix, gid);
@@ -74,14 +74,14 @@ namespace BeefYield
 			return name;
 		}
 
-		private Frame newFrame(FrameKind kind)
+		protected Frame newFrame(FrameKind kind)
 		{
 			Frame frame = new Frame(kind, null, mFrameCounter++);
 			mFrames.Add(frame.Id, frame);
 			return frame;
 		}
 
-		private Frame newFrame(FrameKind kind, String description, params Span<Object> args)
+		protected Frame newFrame(FrameKind kind, String description, params Span<Object> args)
 		{
 			String desc = new .();
 			if (args.IsEmpty)
@@ -93,7 +93,7 @@ namespace BeefYield
 			return frame;
 		}
 
-		private Frame reserveFrame(FrameKind kind, String description, params Span<Object> args)
+		protected Frame reserveFrame(FrameKind kind, String description, params Span<Object> args)
 		{
 			String desc = new .();
 			if (args.IsEmpty)
@@ -105,7 +105,7 @@ namespace BeefYield
 			return frame;
 		}
 
-		private void addReservedFrame(Frame frame)
+		protected void addReservedFrame(Frame frame)
 		{
 			Runtime.Assert(frame.Id < 0);
 			Runtime.Assert(mFrames.Remove(frame.Id));
@@ -113,13 +113,13 @@ namespace BeefYield
 			mFrames.Add(frame.Id, frame);
 		}
 
-		private void deleteFrame(Frame frame)
+		protected void deleteFrame(Frame frame)
 		{
 			defer delete frame;
 			Runtime.Assert(mFrames.Remove(frame.Id));
 		}
 
-		private Frame findFrame(FrameKind kind)
+		protected Frame findFrame(FrameKind kind)
 		{
 			for (let frame in mFrameStack.Reversed)
 			{
@@ -129,7 +129,7 @@ namespace BeefYield
 			return null;
 		}
 
-		private void popFrameStackUntil(Frame frame)
+		protected void popFrameStackUntil(Frame frame)
 		{
 			bool foundFrame = false;
 			while (!mFrameStack.IsEmpty)
@@ -144,12 +144,12 @@ namespace BeefYield
 			Runtime.Assert(foundFrame, "Frame stack corruption detected.");
 		}
 
-		private Scope pushNewScope(ScopeKind kind)
+		protected Scope pushNewScope(ScopeKind kind)
 		{
 			return mScopeStack.Add(.. new Scope(kind));
 		}
 
-		private void popCurrentScope(bool emitScopeFinalizers = false)
+		protected void popCurrentScope(bool emitScopeFinalizers = false)
 		{
 			Runtime.Assert(!mScopeStack.IsEmpty);
 			let curScope = mScopeStack.PopBack();
@@ -160,7 +160,7 @@ namespace BeefYield
 			}
 		}
 
-		private Scope findScope(ScopeKind kind)
+		protected Scope findScope(ScopeKind kind)
 		{
 			for (let theScope in mScopeStack.Reversed)
 			{
@@ -170,7 +170,7 @@ namespace BeefYield
 			return null;
 		}
 
-		private void emitAllFinalizers(ScopeKind? stopScope = null)
+		protected void emitAllFinalizers(ScopeKind? stopScope = null)
 		{
 			bool foundScope = !stopScope.HasValue;
 			for (int i = mScopeStack.Count - 1; i >= 0; i--)

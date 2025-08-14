@@ -44,7 +44,21 @@ struct MakeYieldableAttribute : Attribute, IOnMethodInit
 		frameGen.Visit(methodDecl.CompoundStmt);
 		
 		let finalCode = scope String();
-		finalCode.AppendF(
+		generateFinalCode(frameGen, yieldType, finalCode);
+		Compiler.EmitMethodEntry(methodInfo, finalCode);
+	}
+
+	protected MethodDecl findMethod(CompilationUnit root, StringView methodName)
+	{
+		FindMethodVisitor visitor = scope .(methodName);
+		visitor.Visit(root);
+		Runtime.Assert(visitor.FoundMethod != null);
+		return visitor.FoundMethod;
+	}
+
+	protected void generateFinalCode(FrameGenVisitor frameGen, Type yieldType, String output)
+	{
+		output.AppendF(
 			$$"""
 			{
 			[Inline] static __T __GetEnumerator<__T, __U>(__T obj) where __T : System.Collections.IEnumerator<__U> => obj;
@@ -65,20 +79,9 @@ struct MakeYieldableAttribute : Attribute, IOnMethodInit
 			});
 			}
 			""");
-
-		Compiler.EmitMethodEntry(methodInfo, finalCode);
 	}
 
-	private MethodDecl findMethod(CompilationUnit root, StringView methodName)
-	{
-		FindMethodVisitor visitor = scope .(methodName);
-		visitor.Visit(root);
-
-		Runtime.Assert(visitor.FoundMethod != null);
-		return visitor.FoundMethod;
-	}
-
-	private void generateContextTuple(FrameGenVisitor frameGen, String output)
+	protected void generateContextTuple(FrameGenVisitor frameGen, String output)
 	{
 		for (let variable in frameGen.Variables)
 		{
@@ -110,19 +113,19 @@ struct MakeYieldableAttribute : Attribute, IOnMethodInit
 		output.Append(") TContext = ?;");
 	}
 
-	private void generateVarsAssign(FrameGenVisitor frameGen, String output)
+	protected void generateVarsAssign(FrameGenVisitor frameGen, String output)
 	{
 		for (let variable in frameGen.Variables)
 		{
 			if (variable.value is VarTypeSpec || variable.value is LetTypeSpec)
 			{
-				Runtime.FatalError("Implicit variable type 'var'/'let' not supported for yieldable locals.");
+				Runtime.FatalError("Implicit variable type 'var'/'let' not supported for locals.");
 			}
 			output.AppendF($"\tvar {variable.key} = ref context.m_{variable.key};\n");
 		}
 	}
 
-	private void generateSwitchCases(FrameGenVisitor frameGen, String output)
+	protected void generateSwitchCases(FrameGenVisitor frameGen, String output)
 	{
 		CodeGenVisitor codeGen = scope .(null);
 
