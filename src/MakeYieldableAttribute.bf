@@ -30,8 +30,6 @@ struct MakeYieldableAttribute : Attribute, IOnMethodInit
 		if (yieldType == null)
 			return;
 
-		Runtime.Assert(yieldType != null);
-
 		String text = scope .();
 		File.ReadAllText(mFilePath, text);
 
@@ -39,7 +37,6 @@ struct MakeYieldableAttribute : Attribute, IOnMethodInit
 
 		CompilationUnit root;
 		parser.Parse(out root);
-		//defer delete root;
 
 		let methodDecl = findMethod(root, methodName);
 		
@@ -50,6 +47,8 @@ struct MakeYieldableAttribute : Attribute, IOnMethodInit
 		finalCode.AppendF(
 			$$"""
 			{
+			[Inline] static __T __GetEnumerator<__T, __U>(__T obj) where __T : System.Collections.IEnumerator<__U> => obj;
+			[Inline] static decltype(default(__T).GetEnumerator()) __GetEnumerator<__T, __U>(__T obj) where __T : System.Collections.IEnumerable<__U> => obj.GetEnumerator();
 			{{generateContextTuple(frameGen, .. scope .())}}
 			return YieldEnumerator<comptype({{yieldType.GetTypeId()}})>()..Set(TContext, (state, context) => {
 				static mixin CheckTypeNoWarn<T>(var obj) => obj is T;

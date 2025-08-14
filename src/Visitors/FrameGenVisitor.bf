@@ -499,18 +499,19 @@ namespace BeefYield
 			
 			List<StringView> varDecls = scope .();
 
-			if (!mVariables.ContainsKey("_enumerator"))
+			let tempName = newOwnedName("__enumerator_", CurrentFrame.Id);
+			if (!mVariables.ContainsKey(tempName))
 			{
-				mVariables.Add("_enumerator", new ExprModTypeSpec() { Type = .DeclType, Expr = node.SourceExpr });
-				varDecls.Add("_enumerator");
+				mVariables.Add(tempName, new ExprModTypeSpec() { Type = .DeclType, Expr = new CallOpExpr() { Expr = new IdentifierExpr() { Value = "__GetEnumerator" }, Params = new List<Expression>() { node.SourceExpr } } }); // decltype(__GetEnumerator({sourceExpr}))
+				varDecls.Add(tempName);
 			}
 			else
 			{
-				Debug.WriteLine($"Warning! Duplicate var \"_enumerator\" ignored!");
+				Debug.WriteLine($"Warning! Duplicate var \"{tempName}\" ignored!");
 				varDecls.Add("");
 			}
 
-			initialFrame.Statements.Add($"_enumerator = {node.SourceExpr};");
+			initialFrame.Statements.Add($"{tempName} = __GetEnumerator({node.SourceExpr});");
 
 			if (!mVariables.ContainsKey(node.TargetName))
 			{
@@ -525,16 +526,16 @@ namespace BeefYield
 				varDecls.Add("");
 			}
 
-			initialFrame.Statements.Add($"{node.TargetName} = _enumerator.GetNext();");
+			initialFrame.Statements.Add($"{node.TargetName} = {tempName}.GetNext();");
 
 			let loopScope = pushNewScope(.Loop);
 			defer popCurrentScope();
 
 			CurrentScope.Finalizers.Add(
-				"""
-				if (CheckTypeNoWarn!<System.IDisposable>(_enumerator)) [ConstSkip]
+				$$"""
+				if (CheckTypeNoWarn!<System.IDisposable>({{tempName}})) [ConstSkip]
 				{
-					_enumerator.Dispose();
+					{{tempName}}.Dispose();
 				}
 				""");
 			
@@ -548,7 +549,7 @@ namespace BeefYield
 				initialFrame.Next = bodyFrame;
 
 				addReservedFrame(incFrame);
-				incFrame.Statements.Add($"{node.TargetName} = _enumerator.GetNext();");
+				incFrame.Statements.Add($"{node.TargetName} = {tempName}.GetNext();");
 				
 				addReservedFrame(afterFrame);
 				bodyFrame.Statements.Insert(0,
