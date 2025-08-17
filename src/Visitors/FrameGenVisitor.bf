@@ -302,6 +302,27 @@ namespace BeefYield
 			Frame initialFrame = CurrentFrame;
 			int index = initialFrame.Statements.Count;
 
+			VarBindingCollector varBindingCollector = scope .();
+			varBindingCollector.Visit(node.Condition);
+			
+			List<StringView> varDecls = scope .();
+			if (!varBindingCollector.Results.IsEmpty)
+			{
+				for (let variable in varBindingCollector.Results)
+				{
+					if (!mVariables.ContainsKey(variable.Name))
+					{
+						mVariables.Add(variable.Name, variable.Type);
+						varDecls.Add(variable.Name);
+					}
+					else
+					{
+						Debug.WriteLine($"Warning! Duplicate var \"{variable.Name}\" ignored!");
+						varDecls.Add("");
+					}
+				}
+			}
+
 			// 1.
 			// Visit ThenStatement on the current frame.
 			// Unlike the loops, we don't need a separate frame for the 'if' parts.
@@ -321,6 +342,9 @@ namespace BeefYield
 					elseFrameTail = CurrentFrame;
 					popFrameStackUntil(thenFrame);
 				}
+
+				// Rewrite the inline variable declarations as 'out'.
+				node.Condition = VarBindingLowerer.Rewrite(node.Condition);
 
 				Frame afterFrame = newFrame($"if.out [{gid}]");
 				initialFrame.Statements.Insert(index,
@@ -350,6 +374,13 @@ namespace BeefYield
 			var nodeCount = CurrentFrame.Statements.Count - index;
 			if (nodeCount > 0)
 				CurrentFrame.Statements.RemoveRange(index, nodeCount);
+
+			for (var variable in varDecls)
+			{
+				if (!variable.IsEmpty)
+					mVariables.Remove(variable);
+			}
+			varDecls.Clear();
 
 			if (node.ElseStatement != null)
 			{
