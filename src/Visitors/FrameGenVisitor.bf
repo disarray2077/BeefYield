@@ -20,7 +20,7 @@ namespace BeefYield
 		protected class Scope
 		{
 			public ScopeKind Kind;
-			public List<Statement> Finalizers = new .() ~ Release!(_);
+			public List<Statement> Finalizers = new .() ~ delete _;
 			public Frame BreakTarget;
 			public Frame ContinueTarget;
 
@@ -164,6 +164,7 @@ namespace BeefYield
 				for (int i = curScope.Finalizers.Count - 1; i >= 0; i--)
 					CurrentFrame.Statements.Add(curScope.Finalizers[i]);
 			}
+			delete curScope;
 		}
 
 		protected Scope findScope(ScopeKind kind)
@@ -618,6 +619,8 @@ namespace BeefYield
 				// (OPTIMIZATION)
 				// This means the flow of this statement is straightforward (flat),
 				// so the statement can be directly appended to the current frame without needing additional frames.
+				deleteFrame(afterFrame);
+				deleteFrame(incFrame);
 				deleteFrame(bodyFrame);
 				popFrameStackUntil(initialFrame);
 
@@ -730,6 +733,8 @@ namespace BeefYield
 				// (OPTIMIZATION)
 				// This means the flow of this statement is straightforward (flat),
 				// so the statement can be directly appended to the current frame without needing additional frames.
+				deleteFrame(afterFrame);
+				deleteFrame(incFrame);
 				deleteFrame(bodyFrame);
 				popFrameStackUntil(initialFrame);
 
@@ -801,6 +806,7 @@ namespace BeefYield
 				// (OPTIMIZATION)
 				// This means the flow of this statement is straightforward (flat),
 				// so the statement can be directly appended to the current frame without needing additional frames.
+				deleteFrame(afterFrame);
 				deleteFrame(bodyFrame);
 				popFrameStackUntil(initialFrame);
 
