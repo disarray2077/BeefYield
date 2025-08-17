@@ -643,49 +643,48 @@ namespace BeefYield
 			int gid = mGroupCounter++;
 			Frame initialFrame = CurrentFrame;
 			
-			Frame afterFrame = reserveFrame(.ExitBlock, $"foreach.out [{gid}]");
+			Frame afterFrame = reserveFrame($"foreach.out [{gid}]");
 			mFrameStack.Add(afterFrame);
 
-			Frame incFrame = reserveFrame(.LoopIncrement, $"foreach.inc [{gid}]");
-			mFrameStack.Add(incFrame);
-
-			Frame bodyFrame = newFrame(.Block, $"foreach.body [{gid}]");
+			Frame bodyFrame = newFrame($"foreach.body [{gid}]");
 			mFrameStack.Add(bodyFrame);
+
+			if (!mPendingLabel.IsNull)
+			{
+				mLabels.Add(mPendingLabel, .() { BreakTarget = afterFrame, ContinueTarget = bodyFrame });
+				mPendingLabel = default;
+			}
 			
-			List<StringView> varDecls = scope .();
+			List<(StringView, bool)> varDecls = scope .();
 
 			let tempName = newOwnedName("__enumerator_", CurrentFrame.Id);
 			if (!mVariables.ContainsKey(tempName))
 			{
-				mVariables.Add(tempName, new ExprModTypeSpec() { Type = .DeclType, Expr = new CallOpExpr() { Expr = new IdentifierExpr() { Value = "__GetEnumerator" }, Params = new List<Expression>() { node.SourceExpr } } }); // decltype(__GetEnumerator({sourceExpr}))
-				varDecls.Add(tempName);
+				mVariables.Add(tempName, new ExprModTypeSpec() { Type = .DeclType, Expr = BeefParser.ParseTo(scope $"__GetEnumerator({node.SourceExpr})", .. ?) });
+				varDecls.Add((tempName, true));
 			}
 			else
 			{
 				Debug.WriteLine($"Warning! Duplicate var \"{tempName}\" ignored!");
-				varDecls.Add("");
+				varDecls.Add(("", true));
 			}
 
 			initialFrame.Statements.Add($"{tempName} = __GetEnumerator({node.SourceExpr});");
 
 			if (!mVariables.ContainsKey(node.TargetName))
 			{
-				let genericName = new GenericName() { Identifier = "Result" };
-				genericName.TypeArguments.Add(node.TargetType);
-				mVariables.Add(node.TargetName, genericName);
-				varDecls.Add(node.TargetName);
+				mVariables.Add(node.TargetName, node.TargetType);
+				varDecls.Add((node.TargetName, false));
 			}
 			else
 			{
 				Debug.WriteLine($"Warning! Duplicate var \"{node.TargetName}\" ignored!");
-				varDecls.Add("");
+				varDecls.Add(("", false));
 			}
-
-			initialFrame.Statements.Add($"{node.TargetName} = {tempName}.GetNext();");
 
 			let loopScope = pushNewScope(.Loop);
 			loopScope.BreakTarget = afterFrame;
-			loopScope.ContinueTarget = incFrame;
+			loopScope.ContinueTarget = bodyFrame;
 			defer popCurrentScope();
 
 			CurrentScope.Finalizers.Add(
@@ -704,14 +703,11 @@ namespace BeefYield
 
 				// The initialFrame should jump to the loop frame.
 				initialFrame.Next = bodyFrame;
-
-				addReservedFrame(incFrame);
-				incFrame.Statements.Add($"{node.TargetName} = {tempName}.GetNext();");
 				
 				addReservedFrame(afterFrame);
 				bodyFrame.Statements.Insert(0,
 					$"""
-					if (!({node.TargetName} case .Ok))
+					if (!({tempName}.GetNext() case .Ok(out {node.TargetName})))
 					{{
 						state = {afterFrame.Id};
 						break;
@@ -719,8 +715,7 @@ namespace BeefYield
 					""");
 				
 				// The tail frame jumps to the head for the loop continuation
-				bodyFrameTail.Next = incFrame;
-				incFrame.Next = bodyFrame;
+				bodyFrameTail.Next = bodyFrame;
 
 				Runtime.Assert(loopScope == CurrentScope);
 				for (int j = loopScope.Finalizers.Count - 1; j >= 0; j--)
@@ -734,15 +729,15 @@ namespace BeefYield
 				// This means the flow of this statement is straightforward (flat),
 				// so the statement can be directly appended to the current frame without needing additional frames.
 				deleteFrame(afterFrame);
-				deleteFrame(incFrame);
 				deleteFrame(bodyFrame);
 				popFrameStackUntil(initialFrame);
 
-				for (var variable in varDecls)
+				for (var (variable, hasInitializer) in varDecls)
 				{
 					if (!variable.IsEmpty)
 						mVariables.Remove(variable);
-					initialFrame.Statements.PopBack();
+					if (hasInitializer)
+						initialFrame.Statements.PopBack();
 				}
 
 				initialFrame.Statements.Add(node);
