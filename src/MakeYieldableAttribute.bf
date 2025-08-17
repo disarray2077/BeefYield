@@ -131,7 +131,7 @@ struct MakeYieldableAttribute : Attribute, IOnMethodInit
 
 		for (let (id, frame) in frameGen.Frames)
 		{
-			output.AppendF($"case {id}: // {frame.Description ?? frame.Kind.ToString(.. scope .())}\n");
+			output.AppendF($"case {id}: // {frame.Description}\n");
 
 			String caseOutput = codeGen.Output = scope String();
 
@@ -146,13 +146,13 @@ struct MakeYieldableAttribute : Attribute, IOnMethodInit
 			{
 			case .Continue:
 				if (frame.Next != null) {
-					output.AppendF($"state = {frame.Next.Id};\n");
+					output.AppendF($"state = {frame.Next.Id}; // {frame.Description}\n");
 				} else {
 					output.Append("state = -1;\n");
 					output.Append("return .Err;\n");
 				}
 			case .Suspend:
-				output.AppendF($"state = {frame.Next.Id};\n");
+				output.AppendF($"state = {frame.Next.Id}; // {frame.Description};\n");
 
 				if (frame.ResultExpr != null)
 				{
@@ -166,7 +166,7 @@ struct MakeYieldableAttribute : Attribute, IOnMethodInit
 					output.Append("return .Ok;\n");
 				}
 			case .Jump:
-				output.AppendF($"state = {frame.Next.Id};\n");
+				output.AppendF($"state = {frame.Next.Id}; // {frame.Description};\n");
 			case .Return:
 				output.Append("state = -1;\n");
 

@@ -12,19 +12,28 @@ namespace BeefYield
 	{
 		protected enum ScopeKind
 		{
-			Block,
-			Loop
+			Block	= 1 << 0,
+			Loop	= 1 << 1,
+			Switch	= 1 << 2
 		}
 
 		protected class Scope
 		{
 			public ScopeKind Kind;
 			public List<Statement> Finalizers = new .() ~ Release!(_);
+			public Frame BreakTarget;
+			public Frame ContinueTarget;
 
 			public this(ScopeKind kind)
 			{
 				Kind = kind;
 			}
+		}
+
+		protected struct LabelInfo
+		{
+			public Frame BreakTarget;
+			public Frame ContinueTarget;
 		}
 
 		protected Dictionary<StringView, TypeSpec> mVariables = new .() ~ Release!(_);
@@ -36,6 +45,9 @@ namespace BeefYield
 		protected List<Scope> mScopeStack = new .() ~ Release!(_);
 		private List<String> mOwnedNames = new .() ~ Release!(_);
 
+		protected Dictionary<StringView, LabelInfo> mLabels = new .() ~ Release!(_);
+		private StringView mPendingLabel;
+
 		protected Frame CurrentFrame => !mFrameStack.IsEmpty ? mFrameStack.Back : null;
 		protected Scope CurrentScope => !mScopeStack.IsEmpty ? mScopeStack.Back : null;
 		
@@ -46,7 +58,7 @@ namespace BeefYield
 		{
 			mGroupCounter = 1;
 			mFrameCounter = 0;
-			mFrameStack.Add(newFrame(.Start));
+			mFrameStack.Add(newFrame("start"));
 			pushNewScope(.Block);
 		}
 
@@ -57,12 +69,14 @@ namespace BeefYield
 			mVariables.Clear();
 			Release!(mFrames, DictionaryReleaseKind.Items);
 			mFrames.Clear();
-			ReleaseItems!(mScopeStack);
+			Release!(mScopeStack, ContainerReleaseKind.Items);
 			mScopeStack.Clear();
+			Release!(mLabels, DictionaryReleaseKind.Items);
+			mLabels.Clear();
 
 			mGroupCounter = 1;
 			mFrameCounter = 0;
-			mFrameStack.Add(newFrame(.Start));
+			mFrameStack.Add(newFrame("start"));
 			pushNewScope(.Block);
 		}
 
@@ -74,33 +88,35 @@ namespace BeefYield
 			return name;
 		}
 
-		protected Frame newFrame(FrameKind kind)
+		protected Frame newFrame(String description)
 		{
-			Frame frame = new Frame(kind, null, mFrameCounter++);
+			String desc = new .();
+			desc.Append(description);
+			Frame frame = new Frame(desc, mFrameCounter++);
 			mFrames.Add(frame.Id, frame);
 			return frame;
 		}
 
-		protected Frame newFrame(FrameKind kind, String description, params Span<Object> args)
+		protected Frame newFrame(String description, params Span<Object> args)
 		{
 			String desc = new .();
 			if (args.IsEmpty)
 				desc.Append(description);
 			else
 				desc.AppendF(description, params args);
-			Frame frame = new Frame(kind, desc, mFrameCounter++);
+			Frame frame = new Frame(desc, mFrameCounter++);
 			mFrames.Add(frame.Id, frame);
 			return frame;
 		}
 
-		protected Frame reserveFrame(FrameKind kind, String description, params Span<Object> args)
+		protected Frame reserveFrame(String description, params Span<Object> args)
 		{
 			String desc = new .();
 			if (args.IsEmpty)
 				desc.Append(description);
 			else
 				desc.AppendF(description, params args);
-			Frame frame = new Frame(kind, desc, -(++mReservedFrameCounter));
+			Frame frame = new Frame(desc, -(++mReservedFrameCounter));
 			mFrames.Add(frame.Id, frame);
 			return frame;
 		}
@@ -117,16 +133,6 @@ namespace BeefYield
 		{
 			defer delete frame;
 			Runtime.Assert(mFrames.Remove(frame.Id));
-		}
-
-		protected Frame findFrame(FrameKind kind)
-		{
-			for (let frame in mFrameStack.Reversed)
-			{
-				if (frame.Kind == kind)
-					return frame;
-			}
-			return null;
 		}
 
 		protected void popFrameStackUntil(Frame frame)
@@ -164,7 +170,7 @@ namespace BeefYield
 		{
 			for (let theScope in mScopeStack.Reversed)
 			{
-				if (theScope.Kind == kind)
+				if (kind.HasFlag(theScope.Kind))
 					return theScope;
 			}
 			return null;
@@ -176,7 +182,7 @@ namespace BeefYield
 			for (int i = mScopeStack.Count - 1; i >= 0; i--)
 			{
 				let theScope = mScopeStack[i];
-				if (theScope.Kind == stopScope)
+				if (stopScope?.HasFlag(theScope.Kind) == true)
 				{
 					foundScope = true;
 					break;
@@ -309,14 +315,14 @@ namespace BeefYield
 				Frame elseFrameTail = null;
 				if (node.ElseStatement != null)
 				{
-					elseFrame = newFrame(.Block, $"if.else [{gid}]");
+					elseFrame = newFrame($"if.else [{gid}]");
 					mFrameStack.Add(elseFrame);
 					Visit(node.ElseStatement);
 					elseFrameTail = CurrentFrame;
 					popFrameStackUntil(thenFrame);
 				}
 
-				Frame afterFrame = newFrame(.Block, $"if.out [{gid}]");
+				Frame afterFrame = newFrame($"if.out [{gid}]");
 				initialFrame.Statements.Insert(index,
 					$"""
 					if (!({node.Condition}))
@@ -355,7 +361,7 @@ namespace BeefYield
 				{
 					Frame elseFrame = CurrentFrame;
 
-					Frame afterFrame = newFrame(.Block, $"if.out [{gid}]");
+					Frame afterFrame = newFrame($"if.out [{gid}]");
 
 					// We already know the control-flow of the ThenStatement is flat, so it's okay to add it directly here.
 					initialFrame.Statements.Insert(index,
@@ -369,7 +375,8 @@ namespace BeefYield
 						""");
 					
 					// The frame in which the ElseStatement was visited jumps to after the if
-					elseFrame.Next = afterFrame;
+					if (elseFrame.Exit == .Continue)
+						elseFrame.Next = afterFrame;
 
 					mFrameStack.Add(afterFrame);
 					return .Continue;
@@ -389,7 +396,111 @@ namespace BeefYield
 
 		public override VisitResult Visit(SwitchStmt node)
 		{
-			Runtime.NotImplemented();
+			int gid = mGroupCounter++;
+			Frame initialFrame = CurrentFrame;
+
+			StringView stmtLabel = mPendingLabel;
+			mPendingLabel = default;
+
+			if (node.Sections.IsEmpty)
+			{
+				if (node.DefaultSection != null)
+				{
+					Statement body = (node.DefaultSection.Statements.Count == 1)
+						? node.DefaultSection.Statements[0]
+						: scope CompoundStmt() { Statements = new List<Statement>(node.DefaultSection.Statements) };
+					Visit(body);
+				}
+				return .Continue;
+			}
+
+			// This is the 'after-switch' frame that 'break' will jump to.
+			Frame afterFrame = reserveFrame($"switch.out [{gid}]");
+			mFrameStack.Add(afterFrame);
+
+			if (!stmtLabel.IsNull)
+				mLabels.Add(stmtLabel, .() { BreakTarget = afterFrame, ContinueTarget = null });
+
+			// Temporarily push the initial frame back on top so we continue building on it.
+			mFrameStack.Add(initialFrame);
+
+			let switchScope = pushNewScope(.Switch);
+			switchScope.BreakTarget = afterFrame;
+			switchScope.ContinueTarget = null;
+			defer popCurrentScope();
+
+			String tmpName = newOwnedName("__switchVal_", gid);
+			if (!mVariables.ContainsKey(tmpName))
+			{
+				mVariables.Add(tmpName, new ExprModTypeSpec() { Type = .DeclType, Expr = node.Expr });
+			}
+			else
+			{
+				Debug.WriteLine($"Warning! Duplicate temp var \"{tmpName}\" ignored!");
+			}
+			CurrentFrame.Statements.Add($"{tmpName} = {node.Expr};");
+
+			IfStmt rootIf = null;
+			IfStmt currentIf = null;
+
+			// Build an if/else-if chain from the switch sections.
+			for (var section in node.Sections)
+			{
+				Expression condition = null;
+				for (var label in section.Labels)
+				{
+					Expression test;
+					if (label is Literal || label is IdentifierExpr)
+						test = new BinaryOpExpr() { Left = new IdentifierExpr(tmpName), Operation = .Equal, Right = label };
+					else
+						test = new ComparisonOpExpr() { Type = .Case, Left = new IdentifierExpr(tmpName), Right = label };
+
+					condition = (condition == null)
+								 ? test
+								 : new BinaryOpExpr() { Left = condition, Operation = .Or, Right = test };
+				}
+
+				if (section.WhenExpr != null)
+					condition = new BinaryOpExpr() { Left = condition, Operation = .And, Right = section.WhenExpr };
+
+				Statement body = (section.Statements.Count == 1)
+						? section.Statements[0]
+						: new CompoundStmt() { Statements = new List<Statement>(section.Statements) };
+
+				var newIf = new IfStmt() { Condition = condition, ThenStatement = body };
+
+				if (rootIf == null)
+					rootIf = newIf;
+				else
+					currentIf.ElseStatement = newIf;
+
+				currentIf = newIf;
+			}
+
+			// The 'default' section becomes the final 'else' block.
+			if (node.DefaultSection != null)
+			{
+				Statement body = (node.DefaultSection.Statements.Count == 1)
+					? node.DefaultSection.Statements[0]
+					: new CompoundStmt() { Statements = new List<Statement>(node.DefaultSection.Statements) };
+				Runtime.Assert(currentIf != null);
+				currentIf.ElseStatement = body;
+			}
+
+			Visit(rootIf);
+
+			Frame lastBranchTail = CurrentFrame;
+			if (lastBranchTail.Exit == .Continue)
+				lastBranchTail.Next = afterFrame;
+
+			addReservedFrame(afterFrame);
+
+			Runtime.Assert(switchScope == CurrentScope);
+			for (int j = switchScope.Finalizers.Count - 1; j >= 0; j--)
+				afterFrame.Statements.Insert(0, switchScope.Finalizers[j]);
+
+			popFrameStackUntil(afterFrame);
+			return .Continue;
 		}
 
 		public override VisitResult Visit(ForStmt node)
@@ -397,16 +508,22 @@ namespace BeefYield
 			int gid = mGroupCounter++;
 			Frame initialFrame = CurrentFrame;
 
-			Frame afterFrame = reserveFrame(.ExitBlock, $"for.out [{gid}]");
+			Frame afterFrame = reserveFrame($"for.out [{gid}]");
 			mFrameStack.Add(afterFrame);
 
-			Frame incFrame = reserveFrame(.LoopIncrement, $"for.inc [{gid}]");
+			Frame incFrame = reserveFrame($"for.inc [{gid}]");
 			mFrameStack.Add(incFrame);
 
-			Frame bodyFrame = newFrame(.Block, $"for.body [{gid}]");
+			Frame bodyFrame = newFrame($"for.body [{gid}]");
 			mFrameStack.Add(bodyFrame);
 
-			List<StringView> varDecls = scope .();
+			if (!mPendingLabel.IsNull)
+			{
+				mLabels.Add(mPendingLabel, .() { BreakTarget = afterFrame, ContinueTarget = incFrame });
+				mPendingLabel = default;
+			}
+
+			List<(StringView, bool)> varDecls = scope .();
 			if (node.Declaration != null)
 			{
 				for (let variable in node.Declaration.Variables)
@@ -414,19 +531,22 @@ namespace BeefYield
 					if (!mVariables.ContainsKey(variable.Name))
 					{
 						mVariables.Add(variable.Name, node.Declaration.Specification);
-						varDecls.Add(variable.Name);
+						varDecls.Add((variable.Name, variable.Initializer != null));
 					}
 					else
 					{
 						Debug.WriteLine($"Warning! Duplicate var \"{variable.Name}\" ignored!");
-						varDecls.Add("");
+						varDecls.Add(("", variable.Initializer != null));
 					}
 
-					initialFrame.Statements.Add($"{variable.Name} = {variable.Initializer};");
+					if (variable.Initializer != null)
+						initialFrame.Statements.Add($"{variable.Name} = {variable.Initializer};");
 				}
 			}
 
 			let loopScope = pushNewScope(.Loop);
+			loopScope.BreakTarget = afterFrame;
+			loopScope.ContinueTarget = incFrame;
 			defer popCurrentScope();
 			
 			Visit(node.Body);
@@ -470,11 +590,12 @@ namespace BeefYield
 				deleteFrame(bodyFrame);
 				popFrameStackUntil(initialFrame);
 
-				for (var variable in varDecls)
+				for (let (variable, hasInitializer) in varDecls)
 				{
 					if (!variable.IsEmpty)
 						mVariables.Remove(variable);
-					initialFrame.Statements.PopBack();
+					if (hasInitializer)
+						initialFrame.Statements.PopBack();
 				}
 
 				initialFrame.Statements.Add(node);
@@ -529,6 +650,8 @@ namespace BeefYield
 			initialFrame.Statements.Add($"{node.TargetName} = {tempName}.GetNext();");
 
 			let loopScope = pushNewScope(.Loop);
+			loopScope.BreakTarget = afterFrame;
+			loopScope.ContinueTarget = incFrame;
 			defer popCurrentScope();
 
 			CurrentScope.Finalizers.Add(
@@ -597,13 +720,21 @@ namespace BeefYield
 			int gid = mGroupCounter++;
 			Frame initialFrame = CurrentFrame;
 			
-			Frame afterFrame = reserveFrame(.ExitBlock, $"while.out [{gid}]");
+			Frame afterFrame = reserveFrame($"while.out [{gid}]");
 			mFrameStack.Add(afterFrame);
 
-			Frame bodyFrame = newFrame(.Block, $"while.body [{gid}]");
+			Frame bodyFrame = newFrame($"while.body [{gid}]");
 			mFrameStack.Add(bodyFrame);
+		    
+			if (!mPendingLabel.IsNull)
+			{
+				mLabels.Add(mPendingLabel, .() { BreakTarget = afterFrame, ContinueTarget = bodyFrame });
+				mPendingLabel = default;
+			}
 
 			let loopScope = pushNewScope(.Loop);
+			loopScope.BreakTarget = afterFrame;
+			loopScope.ContinueTarget = bodyFrame;
 			defer popCurrentScope();
 			
 			Visit(node.Body);
@@ -700,7 +831,7 @@ namespace BeefYield
 					if (!callOpExpr.Params.IsEmpty)
 						CurrentFrame.ResultExpr = callOpExpr.Params[0];
 					CurrentFrame.Exit = FrameExit.Suspend;
-					CurrentFrame.Next = newFrame(.Block, $"yield.after [{mGroupCounter - 1}]");
+					CurrentFrame.Next = newFrame($"yield.after [{mGroupCounter - 1}]");
 					mFrameStack.Add(CurrentFrame.Next);
 					return .Continue;
 				}
@@ -724,11 +855,22 @@ namespace BeefYield
 
 		public override VisitResult Visit(BreakStmt node)
 		{
-			Frame targetFrame = findFrame(.ExitBlock);
-			Runtime.Assert(targetFrame != null, "'break' is not applicable");
+			Frame targetFrame;
+			if (!node.TargetLabel.IsNull)
+			{
+				if (!mLabels.TryGetValue(node.TargetLabel, let labelInfo))
+					Runtime.FatalError(scope $"Label '{node.TargetLabel}' not found for 'break' statement");
+				targetFrame = labelInfo.BreakTarget;
+				Runtime.Assert(targetFrame != null, scope $"'break' is not applicable to the statement with label '{node.TargetLabel}'");
+			}
+			else
+			{
+				targetFrame = findScope(.Loop | .Switch)?.BreakTarget;
+				Runtime.Assert(targetFrame != null, "'break' is not applicable");
+			}
 
 			// Only inner block defers. Loop finalizers are in the exit frame.
-			emitAllFinalizers(.Loop);
+			emitAllFinalizers(.Loop | .Switch);
 
 			CurrentFrame.Next = targetFrame;
 			CurrentFrame.Exit = FrameExit.Jump;
@@ -737,14 +879,52 @@ namespace BeefYield
 
 		public override VisitResult Visit(ContinueStmt node)
 		{
-			Frame targetFrame = findFrame(.LoopIncrement);
-			Runtime.Assert(targetFrame != null, "'continue' is not applicable");
+			Frame targetFrame;
+			if (!node.TargetLabel.IsNull)
+			{
+				if (!mLabels.TryGetValue(node.TargetLabel, let labelInfo))
+					Runtime.FatalError(scope $"Label '{node.TargetLabel}' not found for continue statement");
+				targetFrame = labelInfo.ContinueTarget;
+				Runtime.Assert(targetFrame != null, scope $"'continue' is not applicable to the statement with label '{node.TargetLabel}'");
+			}
+			else
+			{
+				targetFrame = findScope(.Loop)?.ContinueTarget;
+				Runtime.Assert(targetFrame != null, "'continue' is not applicable");
+			}
 			
 			// Only inner block defers. Loop finalizers are in the exit frame.
 			emitAllFinalizers(.Loop);
 
 			CurrentFrame.Next = targetFrame;
 			CurrentFrame.Exit = FrameExit.Jump;
+			return .Continue;
+		}
+
+		public override VisitResult Visit(FallthroughStmt node)
+		{
+			Runtime.NotImplemented();
+		}
+
+		public override VisitResult Visit(LabeledStmt node)
+		{
+			if (mLabels.ContainsKey(node.Label))
+			{
+				Debug.WriteLine($"Warning! Duplicate label '{node.Label}'");
+				return .Continue;
+			}
+
+			mPendingLabel = node.Label;
+			defer mLabels.Remove(node.Label);
+
+			Visit(node.Statement);
+
+			if (mPendingLabel != default)
+			{
+				mPendingLabel = default;
+				Runtime.FatalError(scope $"Label '{node.Label}' is not attached to an labelable statement.");
+			}
+
 			return .Continue;
 		}
 	}

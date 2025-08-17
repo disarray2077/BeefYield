@@ -4,14 +4,6 @@ using BeefParser.AST;
 
 namespace BeefYield
 {
-	enum FrameKind
-	{
-		Start,
-		Block,
-		ExitBlock,
-		LoopIncrement,
-	}
-
 	enum FrameExit
 	{
 		Continue,
@@ -22,7 +14,6 @@ namespace BeefYield
 
 	class Frame
 	{
-		public FrameKind Kind { get; private set; }
 		public String Description { get; private set; } ~ delete _;
 		public int Id { get; private set; }
 		public readonly List<Statement> Statements = new .() ~ delete _;
@@ -43,9 +34,8 @@ namespace BeefYield
 			}
 		}
 
-		public this(FrameKind kind, String description, int id)
+		public this(String description, int id)
 		{
-			Kind = kind;
 			Description = description;
 			Id = id;
 		}
