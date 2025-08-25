@@ -315,129 +315,182 @@ namespace BeefYield
 		public override VisitResult Visit(IfStmt node)
 		{
 			int gid = mGroupCounter++;
-			Frame initialFrame = CurrentFrame;
-			int index = initialFrame.Statements.Count;
+			Frame entry = CurrentFrame;
+			int insertPos = entry.Statements.Count;
 
-			VarBindingCollector varBindingCollector = scope .();
-			varBindingCollector.Visit(node.Condition);
-			
+			// collect inline 'var x' bindings in the condition
+			VarBindingCollector vbc = scope .();
+			vbc.Visit(node.Condition);
+
 			List<StringView> varDecls = scope .();
-			if (!varBindingCollector.Results.IsEmpty)
+			for (let variable in vbc.Results)
 			{
-				for (let variable in varBindingCollector.Results)
+				if (!mVariables.ContainsKey(variable.Name))
 				{
-					if (!mVariables.ContainsKey(variable.Name))
-					{
-						mVariables.Add(variable.Name, variable.Type);
-						varDecls.Add(variable.Name);
-					}
-					else
-					{
-						Debug.WriteLine($"Warning! Duplicate var \"{variable.Name}\" ignored!");
-						varDecls.Add("");
-					}
+					mVariables.Add(variable.Name, variable.Type);
+					varDecls.Add(variable.Name);
+				}
+				else
+				{
+					Debug.WriteLine($"Warning! Duplicate var \"{variable.Name}\" ignored!");
+					varDecls.Add("");
 				}
 			}
 
-			// 1.
-			// Visit ThenStatement on the current frame.
-			// Unlike the loops, we don't need a separate frame for the 'if' parts.
-			Visit(node.ThenStatement);
-
-			if (CurrentFrame != initialFrame || CurrentFrame.Exit != .Continue)
+			(Frame Head, Frame Tail) _AnalyseBranch(Statement stmt, String desc, Frame entry)
 			{
-				Frame thenFrame = CurrentFrame;
+				defer popFrameStackUntil(entry);
 
-				Frame elseFrame = null;
-				Frame elseFrameTail = null;
-				if (node.ElseStatement != null)
-				{
-					elseFrame = newFrame($"if.else [{gid}]");
-					mFrameStack.Add(elseFrame);
-					Visit(node.ElseStatement);
-					elseFrameTail = CurrentFrame;
-					popFrameStackUntil(thenFrame);
-				}
+				Frame head = newFrame(desc);
+				mFrameStack.Add(head);
+				Visit(stmt);
 
-				// Rewrite the inline variable declarations as 'out'.
-				node.Condition = VarBindingLowerer.Rewrite(node.Condition);
+				return (head, CurrentFrame);
+			}
 
-				Frame afterFrame = newFrame($"if.out [{gid}]");
-				initialFrame.Statements.Insert(index,
-					$"""
-					if (!({node.Condition}))
-					{{
-						state = {elseFrame?.Id ?? afterFrame.Id};
-						break;
-					}}
-					""");
+			var (thenHead, thenTail) = _AnalyseBranch(node.ThenStatement, scope $"if.then [{gid}]", entry);
+			bool thenTerminates = thenTail.Exit != .Continue;
+			bool thenIsFlat = thenHead == thenTail && !thenTerminates;
 
-				// Both the 'then' and the tail of the 'else' frame jumps to after the if
-				if (thenFrame.Exit == .Continue)
-					thenFrame.Next = afterFrame;
-				if (elseFrameTail?.Exit == .Continue)
-					elseFrameTail?.Next = afterFrame;
+			Frame elseHead = null;
+			Frame elseTail = null;
+			bool elseTerminates = false;
+			bool elseIsFlat = true;
+			if (node.ElseStatement != null)
+			{
+				(elseHead, elseTail) = _AnalyseBranch(node.ElseStatement, scope $"if.else [{gid}]", entry);
+				elseTerminates = elseTail.Exit != .Continue;
+				elseIsFlat = elseHead == elseTail && !elseTerminates;
+			}
 
-				popFrameStackUntil(initialFrame);
+			if (thenIsFlat && elseIsFlat)
+			{
+				deleteFrame(thenHead);
+				if (elseHead != null)
+					deleteFrame(elseHead);
+				entry.Statements.Add(node);
 
-				mFrameStack.Add(afterFrame);
+				// Note that we only clean the variables in this branch.
+				// That`s because they don't need to be tracked anymore here.
+				for (let v in varDecls)
+					if (!v.IsEmpty)
+						mVariables.Remove(v);
+
 				return .Continue;
 			}
 
-			// 2. (OPTIMIZATION)
-			// ThenStatement has a flat control-flow.
-			// Remove ThenStatement from the current frame and Visit ElseStatement this time, again, without making a new frame.
-			var nodeCount = CurrentFrame.Statements.Count - index;
-			if (nodeCount > 0)
-				CurrentFrame.Statements.RemoveRange(index, nodeCount);
-
-			for (var variable in varDecls)
+			if (!varDecls.IsEmpty)
 			{
-				if (!variable.IsEmpty)
-					mVariables.Remove(variable);
+				// rewrite all 'var x' bindings to 'out x' 
+				node.Condition = VarBindingLowerer.Rewrite(node.Condition);
 			}
-			varDecls.Clear();
 
-			if (node.ElseStatement != null)
+			if (elseIsFlat)
 			{
-				index = initialFrame.Statements.Count;
+				// 'elseHead' is flat and therefore trivially inlineable.
+				let inlinedStatements = scope CompoundStmt();
+				let inlinedJumps = scope List<Frame>();
+				Frame jumpFrame = thenHead;
 
-				Visit(node.ElseStatement);
-
-				if (CurrentFrame != initialFrame || CurrentFrame.Exit != .Continue)
+				// check if 'thenHead' can be trivially inlined too.
+				if ((jumpFrame.Exit == .Continue || jumpFrame.Exit == .Jump) && (jumpFrame.Next != null && jumpFrame.Next.Id >= 0))
 				{
-					Frame elseFrame = CurrentFrame;
+				    inlinedStatements.Statements.AddRange(jumpFrame.Statements);
+					inlinedJumps.AddRange(jumpFrame.InlinedTargets);
+				    Frame nextFrame = jumpFrame.Next;
+				    deleteFrame(jumpFrame);
+				    jumpFrame = nextFrame;
 
-					Frame afterFrame = newFrame($"if.out [{gid}]");
-
-					// We already know the control-flow of the ThenStatement is flat, so it's okay to add it directly here.
-					initialFrame.Statements.Insert(index,
-						$"""
-						if ({node.Condition})
-						{{
-							{node.ThenStatement}
-							state = {afterFrame.Id};
-							break;
-						}}
-						""");
-					
-					// The frame in which the ElseStatement was visited jumps to after the if
-					if (elseFrame.Exit == .Continue)
-						elseFrame.Next = afterFrame;
-
-					mFrameStack.Add(afterFrame);
-					return .Continue;
+					// skip any subsequent empty frames
+					while (jumpFrame != null && jumpFrame.Statements.IsEmpty && (jumpFrame.Exit == .Continue || jumpFrame.Exit == .Jump) && (jumpFrame.Next != null && jumpFrame.Next.Id >= 0))
+					    jumpFrame = jumpFrame.Next;
 				}
 
-				nodeCount = CurrentFrame.Statements.Count - index;
-				if (nodeCount > 0)
-					CurrentFrame.Statements.RemoveRange(index, nodeCount);
+				entry.Statements.Insert(insertPos,
+					$"""
+					if ({node.Condition})
+					{{
+						{!inlinedStatements.Statements.IsEmpty ? inlinedStatements : null}
+						state = {jumpFrame.Id};
+						continue;
+					}}
+					""");
+				entry.RegisterInlineJump(jumpFrame);
+				for (let jump in inlinedJumps)
+					entry.RegisterInlineJump(jump);
+
+				if (elseHead != null)
+				{
+					if (!elseHead.Statements.IsEmpty)
+						entry.Statements.Insert(insertPos + 1, elseHead.Statements);
+					deleteFrame(elseHead);
+				}
+
+				Frame after = newFrame($"if.out [{mGroupCounter - 1}]");
+				mFrameStack.Add(after);
+
+				if (!thenTerminates)
+					thenTail.Next = after;
+
+				entry.Next = after;
 			}
-			
-			// 3. (OPTIMIZATION)
-			// This means the flow of this statement is straightforward (flat),
-			// so the statement can be directly appended to the current frame without needing additional frames.
-			CurrentFrame.Statements.Add(node);
+			else
+			{
+				// 'thenHead' may be flat and therefore potentially inlineable.
+				let inlinedStatements = scope CompoundStmt();
+				let inlinedJumps = scope List<Frame>();
+				Frame jumpFrame = elseHead;
+
+				// check if 'elseHead' can be trivially inlined too.
+				if ((jumpFrame.Exit == .Continue || jumpFrame.Exit == .Jump) && (jumpFrame.Next != null && jumpFrame.Next.Id >= 0))
+				{
+				    inlinedStatements.Statements.AddRange(jumpFrame.Statements);
+					inlinedJumps.AddRange(jumpFrame.InlinedTargets);
+				    Frame nextFrame = jumpFrame.Next;
+				    deleteFrame(jumpFrame);
+				    jumpFrame = nextFrame;
+
+					// skip any subsequent empty frames
+					while (jumpFrame != null && jumpFrame.Statements.IsEmpty && (jumpFrame.Exit == .Continue || jumpFrame.Exit == .Jump) && (jumpFrame.Next != null && jumpFrame.Next.Id >= 0))
+					    jumpFrame = jumpFrame.Next;
+				}
+
+				entry.Statements.Insert(insertPos,
+					$"""
+					if (!({node.Condition}))
+					{{
+						{!inlinedStatements.Statements.IsEmpty ? inlinedStatements : null}
+						state = {jumpFrame.Id};
+						continue;
+					}}
+					""");
+				entry.RegisterInlineJump(jumpFrame);
+				for (let jump in inlinedJumps)
+					entry.RegisterInlineJump(jump);
+
+				Frame after = newFrame($"if.out [{mGroupCounter - 1}]");
+				mFrameStack.Add(after);
+
+				if (thenIsFlat)
+				{
+					// 'thenHead' is flat and therefore trivially inlineable.
+					if (!thenHead.Statements.IsEmpty)
+						entry.Statements.Insert(insertPos + 1, thenHead.Statements);
+					entry.Next = after;
+					deleteFrame(thenHead);
+				}
+				else
+				{
+					// both aren't flat...
+					entry.Next = thenHead;
+					if (!thenTerminates)
+						thenTail.Next = after;
+				}
+
+				if (!elseTerminates)
+					elseTail.Next = after;
+			}
+
 			return .Continue;
 		}
 
@@ -609,9 +662,10 @@ namespace BeefYield
 					if (!({node.Condition}))
 					{{
 						state = {afterFrame.Id};
-						break;
+						continue;
 					}}
 					""");
+				bodyFrame.RegisterInlineJump(afterFrame);
 				
 				// The tail frame jumps to the head for the loop continuation
 				bodyFrameTail.Next = incFrame;
@@ -721,9 +775,10 @@ namespace BeefYield
 					if (!({tempName}.GetNext() case .Ok(out {node.TargetName})))
 					{{
 						state = {afterFrame.Id};
-						break;
+						continue;
 					}}
 					""");
+				bodyFrame.RegisterInlineJump(afterFrame);
 				
 				// The tail frame jumps to the head for the loop continuation
 				bodyFrameTail.Next = bodyFrame;
@@ -796,9 +851,10 @@ namespace BeefYield
 					if (!({node.Condition}))
 					{{
 						state = {afterFrame.Id};
-						break;
+						continue;
 					}}
 					""");
+				bodyFrame.RegisterInlineJump(afterFrame);
 
 				// The tail frame jumps to the head for the loop continuation
 				bodyFrameTail.Next = bodyFrame;

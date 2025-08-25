@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using BeefParser;
 using BeefParser.AST;
+using System.Collections;
 
 namespace BeefYield;
 
@@ -73,7 +74,7 @@ struct MakeYieldableAttribute : Attribute, IOnMethodInit
 					{
 			{{generateSwitchCases(frameGen, .. scope .())}}
 					default:
-					Runtime.FatalError();
+						Runtime.FatalError();
 					}
 				}
 			});
@@ -125,63 +126,178 @@ struct MakeYieldableAttribute : Attribute, IOnMethodInit
 		}
 	}
 
+	protected static void mergeLinearFallthroughs(Dictionary<int, Frame> frames)
+	{
+	    let inlinePredCount = scope Dictionary<int, int>();
+	    let predCount = scope Dictionary<int, int>((.)frames.Count);
+	    let uniquePred = scope Dictionary<int, Frame>((.)frames.Count);
+
+		// Since inline preds never change during merging (we only move statements),
+		// we compute them once to use as a "targeted" set. We then build the
+		// Next predecessor counts and track the unique predecessor, if any.
+	    for (let kv in frames)
+	    {
+	        let f = kv.value;
+
+	        for (let t in f.InlinedTargets)
+	        {
+	            Runtime.Assert(frames.ContainsKey(t.Id));
+	            int cnt;
+	            if (!inlinePredCount.TryGetValue(t.Id, out cnt))
+	                inlinePredCount.Add(t.Id, cnt = 0);
+	            inlinePredCount[t.Id] = cnt + 1;
+	        }
+
+			if (f.Next != null)
+			{
+			    let nid = f.Next.Id;
+
+			    int c;
+			    if (!predCount.TryGetValue(nid, out c))
+			        predCount[nid] = 1;
+			    else
+			        predCount[nid] = c + 1;
+
+			    Frame prev;
+			    if (!uniquePred.TryGetValue(nid, out prev))
+			        uniquePred[nid] = f;
+			    else
+			        uniquePred[nid] = null;
+			}
+	    }
+
+	    // A header is a node that cannot be merged into its predecessor.
+	    // We only need to start compression from such headers.
+	    let headers = scope List<Frame>(frames.Count);
+	    for (let kv in frames)
+	    {
+	        let f = kv.value;
+
+	        int cnt;
+	        if (!predCount.TryGetValue(f.Id, out cnt))
+	            cnt = 0;
+
+	        bool targeted = inlinePredCount.ContainsKey(f.Id);
+
+	        if (targeted || cnt != 1)
+	        {
+	            headers.Add(f);
+	            continue;
+	        }
+
+	        let p = uniquePred[f.Id];
+	        if (p == null || p.Exit != .Continue)
+	            headers.Add(f);
+	    }
+
+	    // Greedily absorb successors for each header
+	    for (let h in headers)
+	    {
+			Runtime.Assert(frames.ContainsKey(h.Id));
+	        var cur = h;
+
+	        // Only 'Continue' blocks can be extended
+	        while (cur.Exit == .Continue && cur.Next != null)
+	        {
+	            let f = cur.Next;
+
+	            if (f.Exit != .Continue)
+	                break;
+
+	            if (inlinePredCount.ContainsKey(f.Id))
+	                break;
+
+	            int cntF;
+	            if (!predCount.TryGetValue(f.Id, out cntF) || cntF != 1)
+	                break;
+
+	            let up = uniquePred[f.Id];
+	            if (up != cur) // stale or not uniquely pred'ed by cur
+	                break;
+
+	            // Splice f into cur
+	            if (!f.Statements.IsEmpty)
+	                cur.Statements.AddRange(f.Statements);
+
+	            if (!f.InlinedTargets.IsEmpty)
+	                cur.InlinedTargets.AddRange(f.InlinedTargets);
+
+	            cur.[Friend]mNext = f.Next;
+	            Debug.Assert(cur.Exit != .Suspend || cur.Next != null);
+
+	            // Maintain uniquePred for f.Next: if it used to be f, it becomes cur
+	            if (f.Next != null)
+	            {
+	                let nxt = f.Next;
+	                Frame prevUP;
+	                if (uniquePred.TryGetValue(nxt.Id, out prevUP) && prevUP == f)
+	                    uniquePred[nxt.Id] = cur;
+	            }
+
+	            // Remove f from active set
+	            frames.Remove(f.Id);
+	            predCount.Remove(f.Id);
+	            uniquePred.Remove(f.Id);
+	        }
+	    }
+	}
+
 	protected void generateSwitchCases(FrameGenVisitor frameGen, String output)
 	{
 		CodeGenVisitor codeGen = scope .(null);
+		codeGen.[Friend]mIdentation += 1;
+
+		mergeLinearFallthroughs(frameGen.Frames);
 
 		for (let (id, frame) in frameGen.Frames)
 		{
 			output.AppendF($"case {id}: // {frame.Description}\n");
 
-			String caseOutput = codeGen.Output = scope String();
+			if (!frame.Statements.IsEmpty)
+			{
+				String caseOutput = codeGen.Output = scope String();
 
-			let cmpStmt = scope CompoundStmt();
-			cmpStmt.Statements.AddRange(frame.Statements);
-			codeGen.Visit(cmpStmt);
-			cmpStmt.Statements.Clear();
+				let cmpStmt = scope CompoundStmt();
+				cmpStmt.Statements.AddRange(frame.Statements);
+				codeGen.Visit(cmpStmt);
+				cmpStmt.Statements.Clear();
 
-			output.Append(caseOutput);
+				output.Append(caseOutput);
+			}
 
 			switch (frame.Exit)
 			{
 			case .Continue:
-				if (frame.Next != null) {
-					output.AppendF($"state = {frame.Next.Id}; // {frame.Description}\n");
-				} else {
-					output.Append("state = -1;\n");
-					output.Append("return .Err;\n");
+				if (frame.Next != null)
+				{
+					output.AppendF($"\tstate = {frame.Next.Id}; // {frame.Next.Description}\n");
+                    output.Append("\tcontinue;\n");
+				}
+				else
+				{
+					output.Append("\tstate = -1;\n");
+					output.Append("\treturn .Err;\n");
 				}
 			case .Suspend:
-				output.AppendF($"state = {frame.Next.Id}; // {frame.Description};\n");
+				output.AppendF($"\tstate = {frame.Next.Id}; // {frame.Next.Description};\n");
 
 				if (frame.ResultExpr != null)
 				{
 					let exprOutput = codeGen.Output = scope String();
 					codeGen.Visit(frame.ResultExpr);
 
-					output.AppendF($"return .Ok({exprOutput});\n");
+					output.AppendF($"\treturn .Ok({exprOutput});\n");
 				}
 				else
 				{
-					output.Append("return .Ok;\n");
+					output.Append("\treturn .Ok;\n");
 				}
 			case .Jump:
-				output.AppendF($"state = {frame.Next.Id}; // {frame.Description};\n");
+				output.AppendF($"\tstate = {frame.Next.Id}; // {frame.Next.Description};\n");
+                output.Append("\tcontinue;\n");
 			case .Return:
-				output.Append("state = -1;\n");
-
-				output.Append("return .Err;\n");
-				/*if (frame.exitExpr != null)
-				{
-					let exprOutput = CodeGen.mOutput = scope String();
-					CodeGen.Visit(frame.exitExpr);
-
-					output.AppendF($"return .Ok({exprOutput});\n");
-				}
-				else
-				{
-					output.Append("return .Ok;\n");
-				}*/
+				output.Append("\tstate = -1;\n");
+				output.Append("\treturn .Err;\n");
 			default:
 				Runtime.NotImplemented();
 			}
