@@ -135,6 +135,11 @@ namespace BeefYield
 			Runtime.Assert(mFrames.Remove(frame.Id));
 		}
 
+		protected bool isFrameInlineable(Frame frame)
+		{
+			return frame == CurrentFrame && CurrentFrame.Exit == .Continue;
+		}
+
 		protected void popFrameStackUntil(Frame frame)
 		{
 			bool foundFrame = false;
@@ -208,9 +213,13 @@ namespace BeefYield
 			for (let ast in compStmt.Statements)
 			{
 				Visit(ast);
-				if (CurrentFrame.Exit == .Return)
+
+				// A Suspend frame should never be the current frame by this point.
+				Runtime.Assert(CurrentFrame.Exit != .Suspend);
+
+				if (CurrentFrame.Exit != .Continue)
 				{
-					// Finalizers were already emitted at the point of YieldBreak!
+					// Any Finalizers should already have been emitted by this point.
 					popCurrentScope();
 					return .Continue;
 				}
@@ -269,12 +278,14 @@ namespace BeefYield
 
 			Visit(node.Body);
 
-			if (CurrentFrame != initialFrame || CurrentFrame.Exit != .Continue)
+			if (!isFrameInlineable(initialFrame))
 			{
-			    popCurrentScope(CurrentFrame.Exit != .Return);
+			    popCurrentScope(CurrentFrame.Exit == .Continue);
 			}
 			else
 			{
+				Runtime.Assert(CurrentFrame.Next == null);
+
 				// (OPTIMIZATION)
 				// This means the flow of this statement is straightforward (flat),
 				// so the statement can be directly appended to the current frame.
@@ -583,7 +594,7 @@ namespace BeefYield
 			
 			Visit(node.Body);
 
-			if (bodyFrame != CurrentFrame || CurrentFrame.Exit != .Continue)
+			if (!isFrameInlineable(bodyFrame))
 			{
 				Frame bodyFrameTail = CurrentFrame;
 
@@ -616,6 +627,8 @@ namespace BeefYield
 			}
 			else
 			{
+				Runtime.Assert(CurrentFrame.Next == null);
+
 				// (OPTIMIZATION)
 				// This means the flow of this statement is straightforward (flat),
 				// so the statement can be directly appended to the current frame without needing additional frames.
@@ -697,7 +710,7 @@ namespace BeefYield
 			
 			Visit(node.Body);
 
-			if (bodyFrame != CurrentFrame || CurrentFrame.Exit != .Continue)
+			if (!isFrameInlineable(bodyFrame))
 			{
 				Frame bodyFrameTail = CurrentFrame;
 
@@ -725,6 +738,8 @@ namespace BeefYield
 			}
 			else
 			{
+				Runtime.Assert(CurrentFrame.Next == null);
+
 				// (OPTIMIZATION)
 				// This means the flow of this statement is straightforward (flat),
 				// so the statement can be directly appended to the current frame without needing additional frames.
@@ -770,7 +785,7 @@ namespace BeefYield
 			
 			Visit(node.Body);
 
-			if (bodyFrame != CurrentFrame || CurrentFrame.Exit != .Continue)
+			if (!isFrameInlineable(bodyFrame))
 			{
 				Frame bodyFrameTail = CurrentFrame;
 
@@ -798,6 +813,8 @@ namespace BeefYield
 			}
 			else
 			{
+				Runtime.Assert(CurrentFrame.Next == null);
+
 				// (OPTIMIZATION)
 				// This means the flow of this statement is straightforward (flat),
 				// so the statement can be directly appended to the current frame without needing additional frames.
