@@ -245,7 +245,11 @@ namespace BeefYield
 			{
 				for (let variable in node.Decl.Variables)
 				{
-					if (!mVariables.TryAdd(variable.Name, node.Decl.Specification))
+					TypeSpec typeSpec = node.Decl.Specification;
+					if (typeSpec is LetTypeSpec || typeSpec is VarTypeSpec)
+						typeSpec = new ExprModTypeSpec() { Type = .DeclType, Expr = variable.Initializer };
+
+					if (!mVariables.TryAdd(variable.Name, typeSpec))
 						Debug.WriteLine($"Warning! Duplicate variable \"{variable.Name}\" ignored!");
 
 					if (variable.Initializer != null)
@@ -860,7 +864,11 @@ namespace BeefYield
 		{
 			for (let variable in node.Declaration.Variables)
 			{
-				if (!mVariables.TryAdd(variable.Name, node.Declaration.Specification))
+				TypeSpec typeSpec = node.Declaration.Specification;
+				if (typeSpec is LetTypeSpec || typeSpec is VarTypeSpec)
+					typeSpec = new ExprModTypeSpec() { Type = .DeclType, Expr = variable.Initializer };
+
+				if (!mVariables.TryAdd(variable.Name, typeSpec))
 					Debug.WriteLine($"Warning! Duplicate variable \"{variable.Name}\" ignored!");
 
 				if (variable.Initializer != null)
