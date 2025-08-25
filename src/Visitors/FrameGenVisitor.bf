@@ -446,27 +446,15 @@ namespace BeefYield
 			int gid = mGroupCounter++;
 			Frame initialFrame = CurrentFrame;
 
-			StringView stmtLabel = mPendingLabel;
-			mPendingLabel = default;
-
-			if (node.Sections.IsEmpty)
-			{
-				if (node.DefaultSection != null)
-				{
-					Statement body = (node.DefaultSection.Statements.Count == 1)
-						? node.DefaultSection.Statements[0]
-						: scope CompoundStmt() { Statements = new List<Statement>(node.DefaultSection.Statements) };
-					Visit(body);
-				}
-				return .Continue;
-			}
-
 			// This is the 'after-switch' frame that 'break' will jump to.
 			Frame afterFrame = reserveFrame($"switch.out [{gid}]");
 			mFrameStack.Add(afterFrame);
 
-			if (!stmtLabel.IsNull)
-				mLabels.Add(stmtLabel, .() { BreakTarget = afterFrame, ContinueTarget = null });
+			if (!mPendingLabel.IsNull)
+			{
+				mLabels.Add(mPendingLabel, .() { BreakTarget = afterFrame, ContinueTarget = null });
+				mPendingLabel = null;
+			}
 
 			// Temporarily push the initial frame back on top so we continue building on it.
 			mFrameStack.Add(initialFrame);
@@ -496,19 +484,20 @@ namespace BeefYield
 				Expression condition = null;
 				for (var label in section.Labels)
 				{
-					Expression test;
-					if (label is Literal || label is IdentifierExpr)
-						test = new BinaryOpExpr() { Left = new IdentifierExpr(tmpName), Operation = .Equal, Right = label };
-					else
-						test = new ComparisonOpExpr() { Type = .Case, Left = new IdentifierExpr(tmpName), Right = label };
+					Expression test = new ComparisonOpExpr()
+					{
+						Type = (label is Literal || label is IdentifierExpr) ? .Equal : .Case,
+						Left = new IdentifierExpr(tmpName),
+						Right = label
+					};
 
 					condition = (condition == null)
 								 ? test
-								 : new BinaryOpExpr() { Left = condition, Operation = .Or, Right = test };
+								 : new LogicalOpExpr() { Left = condition, Operation = .Or, Right = test };
 				}
 
 				if (section.WhenExpr != null)
-					condition = new BinaryOpExpr() { Left = condition, Operation = .And, Right = section.WhenExpr };
+					condition = new LogicalOpExpr() { Left = condition, Operation = .And, Right = section.WhenExpr };
 
 				Statement body = (section.Statements.Count == 1)
 						? section.Statements[0]
@@ -525,16 +514,21 @@ namespace BeefYield
 			}
 
 			// The 'default' section becomes the final 'else' block.
-			if (node.DefaultSection != null)
+			Statement defaultBody = null;
+    		if (node.DefaultSection != null)
 			{
-				Statement body = (node.DefaultSection.Statements.Count == 1)
-					? node.DefaultSection.Statements[0]
-					: new CompoundStmt() { Statements = new List<Statement>(node.DefaultSection.Statements) };
-				Runtime.Assert(currentIf != null);
-				currentIf.ElseStatement = body;
+				defaultBody = (node.DefaultSection.Statements.Count == 1)
+				    ? node.DefaultSection.Statements[0]
+				    : new CompoundStmt() { Statements = new List<Statement>(node.DefaultSection.Statements) };
+
+				if (currentIf != null)
+				    currentIf.ElseStatement = defaultBody;
 			}
 
-			Visit(rootIf);
+			if (rootIf != null)
+			    Visit(rootIf);
+			else if (defaultBody != null)
+			    Visit(defaultBody);
 
 			Frame lastBranchTail = CurrentFrame;
 			if (lastBranchTail.Exit == .Continue)
