@@ -18,7 +18,7 @@ namespace BeefYield.Tests
 			
 			for (int j = 0; j < 2; j++)
 			{
-				for (char8 res in Yieldable2(str, (c) => c != '.'))
+				for (let res in Yieldable2(str, (c) => c != '.'))
 				{
 					YieldReturn!(res);
 				}
@@ -33,7 +33,7 @@ namespace BeefYield.Tests
 			where TPred : delegate bool(T a)
 		{
 #unwarn
-			for (T res in enumerator)
+			for (let res in enumerator)
 			{
 				if (predicate(res))
 					YieldReturn!(res);

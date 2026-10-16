@@ -6,7 +6,7 @@ using BeefParser.AST;
 namespace BeefYield
 {
 	/// Scans an AST expression to find 'let' and 'var' variable bindings
-	public class VarBindingCollector : ASTWalker
+	internal class VarBindingCollector : ASTWalker
 	{
 		public struct FoundVar
 		{

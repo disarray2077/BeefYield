@@ -5,7 +5,7 @@ using BeefParser.AST;
 namespace BeefYield
 {
 	/// Rewrites an AST expression, transforming 'LetExpr' nodes into 'OutExpr' nodes.
-	public class VarBindingLowerer : ASTRewriter
+	internal class VarBindingLowerer : ASTRewriter
 	{
 		public static Expression Rewrite(Expression expr)
 		{

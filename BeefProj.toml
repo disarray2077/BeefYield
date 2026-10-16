@@ -12,4 +12,8 @@ Name = "Visitors"
 
 [[ProjectFolder.Items.Items]]
 Type = "IgnoreSource"
+Name = "FrameGenVisitor - Copia (2).bf"
+
+[[ProjectFolder.Items.Items]]
+Type = "IgnoreSource"
 Name = "FrameGenVisitor - Copia.bf"

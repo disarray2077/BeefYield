@@ -5,6 +5,7 @@ using BeefParser.AST;
 using System.Diagnostics;
 
 using internal BeefParser;
+using internal BeefYield;
 
 namespace BeefYield
 {
@@ -738,7 +739,11 @@ namespace BeefYield
 
 			if (!mVariables.ContainsKey(node.TargetName))
 			{
-				mVariables.Add(node.TargetName, node.TargetType);
+				TypeSpec typeSpec = node.TargetType;
+				if (typeSpec is LetTypeSpec || typeSpec is VarTypeSpec)
+					typeSpec = new ExprModTypeSpec() { Type = .DeclType, Expr = BeefParser.ParseTo(scope $"__GetEnumerator({node.SourceExpr}).GetNext().Get()", .. ?) };
+
+				mVariables.Add(node.TargetName, typeSpec);
 				varDecls.Add((node.TargetName, false));
 			}
 			else

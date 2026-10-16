@@ -24,7 +24,7 @@ namespace BeefYield.Tests
 #unwarn
 			YieldReturn!(-1);
 
-			for (TestAction action in actions)
+			for (let action in actions)
 			{
 				switch (action)
 				{
