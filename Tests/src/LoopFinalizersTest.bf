@@ -14,9 +14,6 @@ namespace BeefYield.Tests
 
 	class LoopFinalizersTest
 	{
-		// TODO: Use something like Compiler.CalledFilePath instead.
-		const String FilePath = @"d:\BeefLang\Repository\BeefYield\Tests\src\LoopFinalizersTest.bf";
-
 		public static void ExpectArrayEq(Span<int> actual, Span<int> expected)
 		{
 			Test.Assert(actual.Length == expected.Length,
@@ -29,7 +26,7 @@ namespace BeefYield.Tests
 			}
 		}
 
-		[MakeYieldable(FilePath)]
+		[MakeYieldable]
 		public static YieldEnumerator<int> UsingInLoops()
 		{
 #unwarn
@@ -60,7 +57,7 @@ namespace BeefYield.Tests
 			GC.Collect(false);
 		}
 
-		[MakeYieldable(FilePath)]
+		[MakeYieldable]
 		public static YieldEnumerator<int> UsingBreakDisposes()
 		{
 #unwarn
@@ -90,7 +87,7 @@ namespace BeefYield.Tests
 
 		static List<int> sLog = new .() ~ delete _;
 
-		[MakeYieldable(FilePath)]
+		[MakeYieldable]
 		public static YieldEnumerator<int> DeferOnContinueAndBreak()
 		{
 #unwarn

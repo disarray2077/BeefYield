@@ -17,8 +17,7 @@ You're welcome to try it out, just keep its current limitations in mind.
 ### Making a Method Yieldable
 
 To make a method behave like an iterator, you need to:
-1.  Decorate it with the `[MakeYieldable(FilePath)]` attribute.
-    *   `FilePath`: Currently, you must provide the absolute path to the source file containing the method. This is a temporary workaround. Ideally, this would use a compiler intrinsic like `Compiler.CalledFilePath`.
+1.  Decorate it with the `[MakeYieldable]` attribute.
 2.  Change the method's return type to `YieldEnumerator<T>`, where `T` is the type of items being yielded.
 3.  Use the `YieldReturn!(value);` mixin to yield a value.
 4.  Optionally, use the `YieldBreak!();` mixin to explicitly stop iteration.
@@ -35,10 +34,7 @@ namespace MyProject
 {
     class MyIterators
     {
-        // Replace with the actual path to this file in your project.
-        const String FilePath = @"FULL_PATH_TO_THIS_SOURCE_FILE.bf";
-
-        [MakeYieldable(FilePath)]
+        [MakeYieldable]
         public static YieldEnumerator<char8> GetCharacters(String str)
         {
 #unwarn // This is necessary because the original code will no longer be reachable after the transformation
@@ -54,7 +50,7 @@ namespace MyProject
             Debug.WriteLine("GetCharacters: End");
         }
 
-        [MakeYieldable(FilePath)]
+        [MakeYieldable]
         public static YieldEnumerator<T> FilterCharacters<T, TEnum, TPred>(TEnum enumerator, TPred predicate)
             where TEnum : IEnumerator<T>
             where TPred : delegate bool(T a)

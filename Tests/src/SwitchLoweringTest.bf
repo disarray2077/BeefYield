@@ -6,9 +6,6 @@ namespace BeefYield.Tests
 {
 	class SwitchLoweringTest
 	{
-		// TODO: Use something like Compiler.CalledFilePath instead.
-		const String FilePath = @"d:\BeefLang\Repository\BeefYield\Tests\src\SwitchLoweringTest.bf";
-
 		public static void ExpectArrayEq(Span<int> actual, Span<int> expected)
 		{
 			Test.Assert(actual.Length == expected.Length,
@@ -21,7 +18,7 @@ namespace BeefYield.Tests
 			}
 		}
 
-		[MakeYieldable(FilePath)]
+		[MakeYieldable]
 		public static YieldEnumerator<int> SwitchDefaultOnly(int x)
 		{
 #unwarn
@@ -44,7 +41,7 @@ namespace BeefYield.Tests
 			GC.Collect(false);
 		}
 
-		[MakeYieldable(FilePath)]
+		[MakeYieldable]
 		public static YieldEnumerator<int> SwitchWithWhen(int x, int y = 0)
 		{
 #unwarn
@@ -76,13 +73,13 @@ namespace BeefYield.Tests
 			for (let v in SwitchWithWhen(2)) b.Add(v);
 			ExpectArrayEq(b, scope int[](0, 99));
 
-			let b = scope List<int>();
-			for (let v in SwitchWithWhen(2, 20)) b.Add(v);
-			ExpectArrayEq(b, scope int[](20, 99));
-
 			let c = scope List<int>();
-			for (let v in SwitchWithWhen(4)) c.Add(v);
-			ExpectArrayEq(c, scope int[](0, 99));
+			for (let v in SwitchWithWhen(2, 20)) c.Add(v);
+			ExpectArrayEq(c, scope int[](20, 99));
+
+			let d = scope List<int>();
+			for (let v in SwitchWithWhen(4)) d.Add(v);
+			ExpectArrayEq(d, scope int[](0, 99));
 
 			GC.Collect(false);
 		}

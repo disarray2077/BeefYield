@@ -1,8 +1,6 @@
 using System;
-using System.IO;
 using BeefYield;
 using BeefParser;
-using BeefParser.AST;
 using System.Diagnostics;
 using System.Collections;
 
@@ -28,10 +26,7 @@ namespace BeefYield.Tests
 
 	class Test5
 	{
-		// TODO: Use something like Compiler.CalledFilePath instead.
-		const String FilePath = @"d:\BeefLang\Repository\BeefYield\Tests\src\Test5.bf";
-
-		[MakeYieldable(FilePath)]
+		[MakeYieldable]
 		public static YieldEnumerator<int> ComplexYieldMachine(List<String> log)
 		{
 #unwarn

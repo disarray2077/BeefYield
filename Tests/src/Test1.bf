@@ -1,18 +1,12 @@
 using System;
-using System.IO;
 using BeefYield;
-using BeefParser;
-using BeefParser.AST;
 using System.Diagnostics;
 
 namespace BeefYield.Tests
 {
 	class Test1
 	{
-		// TODO: Use something like Compiler.CalledFilePath instead.
-		const String FilePath = @"d:\BeefLang\Repository\BeefYield\Tests\src\Test1.bf";
-
-		[MakeYieldable(FilePath)]
+		[MakeYieldable]
 		public static YieldEnumerator<int> Yieldable(int n)
 		{
 #unwarn

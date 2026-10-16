@@ -6,9 +6,6 @@ namespace BeefYield.Tests
 {
 	class Test6
 	{
-		// TODO: Use something like Compiler.CalledFilePath instead.
-		const String FilePath = @"d:\BeefLang\Repository\BeefYield\Tests\src\Test6.bf";
-
 		public enum TestAction
 		{
 			case SimpleOk(int res),
@@ -18,7 +15,7 @@ namespace BeefYield.Tests
 			NoOp;
 		}
 
-		[MakeYieldable(FilePath)]
+		[MakeYieldable]
 		public static YieldEnumerator<int> ComplexYieldWithPayloads(List<TestAction> actions)
 		{
 #unwarn

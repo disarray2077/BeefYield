@@ -1,7 +1,6 @@
 using System;
 using System.Reflection;
 using System.Diagnostics;
-using System.IO;
 using BeefParser;
 using BeefParser.AST;
 using System.Collections;
@@ -11,12 +10,7 @@ namespace BeefYield;
 [AttributeUsage(.Method)]
 struct MakeYieldableAttribute : Attribute, IOnMethodInit
 {
-	public String mFilePath;
-
-	public this(String filePath)
-	{
-		mFilePath = filePath;
-	}
+	public this() {}
 
 	[Comptime]
 	public void OnMethodInit(MethodInfo methodInfo, Self* prev)
@@ -31,30 +25,30 @@ struct MakeYieldableAttribute : Attribute, IOnMethodInit
 		if (yieldType == null)
 			return;
 
+		String methodText = methodInfo.DeclaringType.TypeDeclaration.GetMethodDeclarationText(methodName);
+		if (String.IsNullOrEmpty(methodText))
+			Runtime.FatalError(scope $"Could not retrieve the declaration for method '{methodName}'.");
+
 		String text = scope .();
-		File.ReadAllText(mFilePath, text);
+		text.Append("class __MethodSource\n{\n");
+		text.Append(methodText);
+		text.Append("}\n");
 
 		BeefParser parser = scope BeefParser(text);
 
 		CompilationUnit root;
-		parser.Parse(out root);
+		if (parser.Parse(out root) case .Err)
+			Runtime.FatalError(scope $"Could not parse the declaration for method '{methodName}'.");
 
-		let methodDecl = findMethod(root, methodName);
-		
+		let classDecl = root.Declarations[0] as ClassDecl;
+		let methodDecl = classDecl.Declarations[0] as MethodDecl;
+
 		let frameGen = new FrameGenVisitor();
 		frameGen.Visit(methodDecl.CompoundStmt);
 		
 		let finalCode = scope String();
 		generateFinalCode(frameGen, yieldType, finalCode);
 		Compiler.EmitMethodEntry(methodInfo, finalCode);
-	}
-
-	protected MethodDecl findMethod(CompilationUnit root, StringView methodName)
-	{
-		FindMethodVisitor visitor = scope .(methodName);
-		visitor.Visit(root);
-		Runtime.Assert(visitor.FoundMethod != null);
-		return visitor.FoundMethod;
 	}
 
 	protected void generateFinalCode(FrameGenVisitor frameGen, Type yieldType, String output)

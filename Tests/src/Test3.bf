@@ -7,10 +7,7 @@ namespace BeefYield.Tests
 {
 	class Test3
 	{
-		// TODO: Use something like Compiler.CalledFilePath instead.
-		const String FilePath = @"d:\BeefLang\Repository\BeefYield\Tests\src\Test3.bf";
-
-		[MakeYieldable(FilePath)]
+		[MakeYieldable]
 		public static YieldEnumerator<char8> Yieldable(String str)
 		{
 #unwarn
@@ -27,7 +24,7 @@ namespace BeefYield.Tests
 			Debug.WriteLine("End");
 		}
 
-		[MakeYieldable(FilePath)]
+		[MakeYieldable]
 		public static YieldEnumerator<T> Yieldable2<T, TEnum, TPred>(TEnum enumerator, TPred predicate)
 			where TEnum : IEnumerator<T>
 			where TPred : delegate bool(T a)

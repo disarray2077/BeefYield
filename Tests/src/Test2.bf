@@ -7,10 +7,7 @@ namespace BeefYield.Tests
 {
 	class Test2
 	{
-		// TODO: Use something like Compiler.CalledFilePath instead.
-		const String FilePath = @"d:\BeefLang\Repository\BeefYield\Tests\src\Test2.bf";
-
-		[MakeYieldable(FilePath)]
+		[MakeYieldable]
 		public static YieldEnumerator<char8> Yieldable(String str)
 		{
 #unwarn

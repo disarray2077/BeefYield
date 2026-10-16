@@ -6,10 +6,7 @@ namespace BeefYield.Tests
 {
 	class LabeledControlFlowTest
 	{
-		// TODO: Use something like Compiler.CalledFilePath instead.
-		const String FilePath = @"d:\BeefLang\Repository\BeefYield\Tests\src\LabeledControlFlowTest.bf";
-
-		[MakeYieldable(FilePath)]
+		[MakeYieldable]
 		public static YieldEnumerator<int> LabeledContinueOuter()
 		{
 #unwarn

@@ -1,8 +1,5 @@
 using System;
-using System.IO;
 using BeefYield;
-using BeefParser;
-using BeefParser.AST;
 using System.Diagnostics;
 using System.Collections;
 
@@ -10,10 +7,7 @@ namespace BeefYield.Tests
 {
 	class IfLoweringTest
 	{
-		// TODO: Use something like Compiler.CalledFilePath instead.
-		const String FilePath = @"d:\BeefLang\Repository\BeefYield\Tests\src\IfLoweringTest.bf";
-
-		[MakeYieldable(FilePath)]
+		[MakeYieldable]
 		public static YieldEnumerator<int> Branchy(int mode)
 		{
 #unwarn
