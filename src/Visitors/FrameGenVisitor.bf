@@ -201,6 +201,23 @@ namespace BeefYield
 			Runtime.Assert(foundScope, "Scope stack corruption detected.");
 		}
 
+		protected void emitJumpFinalizers(Frame targetFrame, bool isContinue)
+		{
+			for (int i = mScopeStack.Count - 1; i >= 0; i--)
+			{
+				let theScope = mScopeStack[i];
+				let target = isContinue ? theScope.ContinueTarget : theScope.BreakTarget;
+				if (target == targetFrame)
+					return;
+
+				// A labeled jump can leave multiple loops and switches. Unwind
+				// every exited scope, rather than stopping at the nearest kind.
+				for (int j = theScope.Finalizers.Count - 1; j >= 0; j--)
+					CurrentFrame.Statements.Add(theScope.Finalizers[j]);
+			}
+			Runtime.FatalError("Jump target not found in the active scope stack.");
+		}
+
 		/// This will discard the VisitResult!
 		public new void Visit(ASTNode node)
 		{
@@ -981,8 +998,8 @@ namespace BeefYield
 				Runtime.Assert(targetFrame != null, "'break' is not applicable");
 			}
 
-			// Only inner block defers. Loop finalizers are in the exit frame.
-			emitAllFinalizers(.Loop | .Switch);
+			// The target scope's finalizers run in its exit frame.
+			emitJumpFinalizers(targetFrame, false);
 
 			CurrentFrame.Next = targetFrame;
 			CurrentFrame.Exit = FrameExit.Jump;
@@ -1005,8 +1022,8 @@ namespace BeefYield
 				Runtime.Assert(targetFrame != null, "'continue' is not applicable");
 			}
 			
-			// Only inner block defers. Loop finalizers are in the exit frame.
-			emitAllFinalizers(.Loop);
+			// Keep the target loop alive, including its enumerator, on continue.
+			emitJumpFinalizers(targetFrame, true);
 
 			CurrentFrame.Next = targetFrame;
 			CurrentFrame.Exit = FrameExit.Jump;

@@ -7,6 +7,65 @@ namespace BeefYield.Tests
 	class LabeledControlFlowTest
 	{
 		[MakeYieldable]
+		public static YieldEnumerator<int> BreakAcrossSwitchWithDefers(List<int> log)
+		{
+#unwarn
+			defer { log.Add(0); }
+			outer: while (true)
+			{
+				defer { log.Add(1); }
+				YieldReturn!(0);
+				switch (0)
+				{
+				case 0:
+					defer { log.Add(2); }
+					break outer;
+				}
+			}
+			YieldReturn!(42);
+		}
+
+		[MakeYieldable]
+		public static YieldEnumerator<int> ContinueAcrossLoopWithDefers(List<int> log)
+		{
+#unwarn
+			defer { log.Add(0); }
+			outer: for (int i = 0; i < 2; i++)
+			{
+				defer { log.Add(10 + i); }
+				for (int j = 0; j < 2; j++)
+				{
+					defer { log.Add(20); }
+					YieldReturn!(i * 10 + j);
+					if (j >= 0)
+						continue outer;
+				}
+			}
+		}
+
+		[Test]
+		public static void LabeledBreakUnwindsPastSwitch()
+		{
+			let log = scope List<int>();
+			let values = scope List<int>();
+			for (let value in BreakAcrossSwitchWithDefers(log))
+				values.Add(value);
+			ExpectArrayEq(values, scope int[](0, 42));
+			ExpectArrayEq(log, scope int[](2, 1, 0));
+		}
+
+		[Test]
+		public static void LabeledContinueUnwindsExitedLoops()
+		{
+			let log = scope List<int>();
+			let values = scope List<int>();
+			for (let value in ContinueAcrossLoopWithDefers(log))
+				values.Add(value);
+			ExpectArrayEq(values, scope int[](0, 10));
+			ExpectArrayEq(log, scope int[](20, 10, 20, 11, 0));
+		}
+
+		[MakeYieldable]
 		public static YieldEnumerator<int> LabeledContinueOuter()
 		{
 #unwarn
